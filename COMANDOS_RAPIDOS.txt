@@ -1,0 +1,116 @@
+════════════════════════════════════════════════════════════════════
+  COMANDOS RÁPIDOS - CRYPTO TRADING BOT
+════════════════════════════════════════════════════════════════════
+
+⚠️ IMPORTANTE: Desconecta VPN de USA antes de usar el bot
+
+════════════════════════════════════════════════════════════════════
+  ACTIVAR ENTORNO VIRTUAL
+════════════════════════════════════════════════════════════════════
+
+cd C:\Users\arlex\Documents\crypto-trading-bot
+venv\Scripts\activate
+
+════════════════════════════════════════════════════════════════════
+  EJECUTAR TEST DE CONEXIÓN
+════════════════════════════════════════════════════════════════════
+
+python tests\test_connection.py
+
+════════════════════════════════════════════════════════════════════
+  EJECUTAR EL BOT
+════════════════════════════════════════════════════════════════════
+
+python main.py
+
+════════════════════════════════════════════════════════════════════
+  DETENER EL BOT
+════════════════════════════════════════════════════════════════════
+
+Presiona: Ctrl + C
+
+════════════════════════════════════════════════════════════════════
+  VER LOGS EN TIEMPO REAL
+════════════════════════════════════════════════════════════════════
+
+# Trading log
+type logs\trading.log
+
+# Errores
+type logs\errors.log
+
+# Trades ejecutados
+type logs\trades.log
+
+════════════════════════════════════════════════════════════════════
+  ARCHIVOS IMPORTANTES
+════════════════════════════════════════════════════════════════════
+
+config\.env                    # Configuración y API keys
+logs\trading.log               # Log de actividad
+logs\trades.log                # Registro de trades
+INSTRUCCIONES_PRUEBA.md        # Guía completa de pruebas
+
+════════════════════════════════════════════════════════════════════
+  OBTENER FONDOS DE TESTNET
+════════════════════════════════════════════════════════════════════
+
+1. Ve a: https://testnet.binancefuture.com
+2. Login con tu cuenta
+3. Click en "Get Test Funds"
+4. Recibirás USDT de prueba gratis
+
+════════════════════════════════════════════════════════════════════
+  ESTRUCTURA DEL PROYECTO
+════════════════════════════════════════════════════════════════════
+
+crypto-trading-bot/
+├── config/.env              ← API KEYS AQUÍ
+├── main.py                  ← EJECUTAR EL BOT
+├── tests/test_connection.py ← TEST DE CONEXIÓN
+├── logs/                    ← LOGS DEL BOT
+└── src/                     ← CÓDIGO FUENTE
+
+════════════════════════════════════════════════════════════════════
+  CONFIGURACIÓN ACTUAL
+════════════════════════════════════════════════════════════════════
+
+Modo:           TESTNET (seguro, dinero de prueba)
+Par:            BTCUSDT
+Timeframe:      4 horas
+Estrategia:     EMA Crossover (9/21)
+Leverage:       2x máximo
+Riesgo/Trade:   1% del capital
+Stop Loss:      2%
+Take Profit:    6%
+Posiciones:     1 máximo a la vez
+
+════════════════════════════════════════════════════════════════════
+  SOLUCIÓN RÁPIDA DE PROBLEMAS
+════════════════════════════════════════════════════════════════════
+
+Problema: "Service unavailable from restricted location"
+Solución: Desconecta VPN de USA o cambia a otro país
+
+Problema: "Invalid API key"
+Solución: Verifica que las keys en config\.env sean correctas
+
+Problema: "Insufficient balance"
+Solución: Obtén fondos en testnet.binancefuture.com
+
+Problema: "Module not found"
+Solución: pip install -r requirements.txt
+
+════════════════════════════════════════════════════════════════════
+  PRÓXIMOS PASOS DESPUÉS DEL TEST
+════════════════════════════════════════════════════════════════════
+
+1. Ejecutar test de conexión ✓
+2. Copiar y pegar resultados del test
+3. Ejecutar el bot si el test pasa
+4. Dejarlo correr 24-48 horas
+5. Reportar resultados y trades
+6. Ajustar parámetros según sea necesario
+7. Agregar más features (backtesting, ML, etc.)
+
+════════════════════════════════════════════════════════════════════
