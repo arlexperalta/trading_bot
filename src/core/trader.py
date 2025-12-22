@@ -12,6 +12,7 @@ from src.data.market_data import MarketData
 from src.strategies.base_strategy import BaseStrategy
 from src.risk.position_manager import PositionManager
 from src.utils.logger import get_logger
+from src.utils.telegram_notifier import notifier
 
 
 class Trader:
@@ -72,6 +73,9 @@ class Trader:
         self.logger.info("TRADING BOT STARTED")
         self.logger.info("=" * 60)
 
+        # Send Telegram notification
+        notifier.notify_bot_start()
+
         iteration = 0
 
         try:
@@ -90,10 +94,11 @@ class Trader:
 
         except KeyboardInterrupt:
             self.logger.info("\nShutdown signal received. Closing gracefully...")
-            self._shutdown()
+            self._shutdown("User requested")
         except Exception as e:
             self.logger.error(f"Critical error in trading loop: {e}", exc_info=True)
-            self._shutdown()
+            notifier.notify_error("Critical Error", str(e))
+            self._shutdown(f"Critical error: {str(e)}")
             raise
 
     def _execute_trading_cycle(self):
@@ -108,6 +113,16 @@ class Trader:
             # 2. Check if we can trade today (daily loss limit)
             if not self.position_manager.check_daily_loss_limit():
                 self.logger.warning("Daily loss limit reached. No trading today.")
+
+                # Notify via Telegram (only once)
+                if not hasattr(self, '_daily_limit_notified'):
+                    stats = self.position_manager.get_daily_stats()
+                    notifier.notify_daily_loss_limit(
+                        abs(stats['daily_pnl']),
+                        Settings.MAX_DAILY_LOSS_PERCENT
+                    )
+                    self._daily_limit_notified = True
+
                 return
 
             # 3. Get market data
@@ -271,6 +286,15 @@ class Trader:
 
             self.logger.info(f"Position opened successfully: {side} {quantity} {self.symbol}")
 
+            # Send Telegram notification
+            notifier.notify_trade_entry(
+                side=side,
+                price=entry_price,
+                quantity=quantity,
+                stop_loss=stop_loss,
+                take_profit=take_profit
+            )
+
         except Exception as e:
             self.logger.error(f"Failed to execute entry: {e}", exc_info=True)
 
@@ -325,6 +349,8 @@ class Trader:
 
             # Calculate profit/loss
             pnl = self._calculate_unrealized_pnl(exit_price)
+            entry_price = self.current_position['entry_price']
+            pnl_percent = (pnl / (entry_price * self.current_position['quantity'])) * 100
 
             # Log trade
             self.logger.log_trade(
@@ -342,6 +368,17 @@ class Trader:
             self.logger.info(
                 f"Position closed successfully. P/L: "
                 f"{'+ $' if pnl > 0 else '- $'}{abs(pnl):.2f}"
+            )
+
+            # Send Telegram notification
+            notifier.notify_trade_exit(
+                side=self.current_position['side'],
+                entry_price=entry_price,
+                exit_price=exit_price,
+                quantity=self.current_position['quantity'],
+                pnl=pnl,
+                pnl_percent=pnl_percent,
+                reason="Strategy Signal"
             )
 
             # Clear position
@@ -397,8 +434,13 @@ class Trader:
                     self.logger.info("Synced existing position from exchange")
                     break
 
-    def _shutdown(self):
-        """Graceful shutdown"""
+    def _shutdown(self, reason: str = "Unknown"):
+        """
+        Graceful shutdown.
+
+        Args:
+            reason: Reason for shutdown
+        """
         self.logger.info("=" * 60)
         self.logger.info("SHUTTING DOWN TRADING BOT")
         self.logger.info("=" * 60)
@@ -407,11 +449,24 @@ class Trader:
         stats = self.position_manager.get_daily_stats()
         self.logger.info(f"Final daily stats: {stats}")
 
+        # Send daily summary if there were trades
+        if stats['total_trades'] > 0:
+            notifier.notify_daily_summary(
+                trades_today=stats['total_trades'],
+                wins=stats['winning_trades'],
+                losses=stats['losing_trades'],
+                total_pnl=stats['daily_pnl'],
+                win_rate=stats['win_rate']
+            )
+
         # Warning if position is still open
         if self.current_position:
             self.logger.warning(
                 f"WARNING: Position still open! "
                 f"{self.current_position['side']} {self.current_position['quantity']} {self.symbol}"
             )
+
+        # Send shutdown notification
+        notifier.notify_bot_stop(reason)
 
         self.logger.info("Bot shutdown complete")
