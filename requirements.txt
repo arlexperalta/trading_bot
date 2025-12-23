@@ -1,7 +1,7 @@
 python-binance==1.0.19
 pandas>=2.0.0
 numpy>=1.26.0
-talipp==2.11.1
+talipp>=2.0.0
 python-dotenv==1.0.0
 colorlog==6.7.0
 requests==2.31.0
