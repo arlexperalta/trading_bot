@@ -26,8 +26,7 @@ COPY --from=builder /usr/include/ta-lib /usr/include/ta-lib
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
-    gcc \
-    python3-dev \
+build-essential \    python3-dev \
             && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
