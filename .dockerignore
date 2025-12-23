@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs (will be created at runtime)
+logs/*.log
+
+# Local config
+config/.env
+.env
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.bak

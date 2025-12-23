@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Trading Bot - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #a371f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 span {
+            font-size: 28px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-badge.running {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+        }
+
+        .status-badge.stopped {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-red);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.running {
+            background: var(--accent-green);
+        }
+
+        .status-dot.stopped {
+            background: var(--accent-red);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-icon {
+            font-size: 20px;
+        }
+
+        .card-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .positive { color: var(--accent-green); }
+        .negative { color: var(--accent-red); }
+        .neutral { color: var(--accent-blue); }
+
+        /* Main Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Position Card */
+        .position-card {
+            grid-column: span 2;
+        }
+
+        .position-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+        }
+
+        .position-item {
+            text-align: center;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .position-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .position-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .no-position {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        /* Indicators */
+        .indicators-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .indicator-item {
+            text-align: center;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .indicator-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .indicator-value {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        /* Trade History */
+        .trade-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .trade-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .trade-item:last-child {
+            border-bottom: none;
+        }
+
+        .trade-side {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .trade-side.long {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+        }
+
+        .trade-side.short {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-red);
+        }
+
+        .trade-details {
+            text-align: right;
+        }
+
+        .trade-pnl {
+            font-weight: 600;
+        }
+
+        .trade-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Logs */
+        .logs-container {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Fira Code', 'Monaco', monospace;
+            font-size: 12px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-time {
+            color: var(--text-muted);
+        }
+
+        .log-level {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            margin: 0 8px;
+        }
+
+        .log-level.INFO { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+        .log-level.WARNING { background: rgba(210, 153, 34, 0.2); color: var(--accent-yellow); }
+        .log-level.ERROR { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        .log-level.DEBUG { background: rgba(163, 113, 247, 0.2); color: var(--accent-purple); }
+
+        /* Config Info */
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+        }
+
+        .config-label {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .config-value {
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px 0;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 40px;
+        }
+
+        .last-update {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Loading state */
+        .loading {
+            opacity: 0.6;
+        }
+
+        /* Error alert */
+        .error-alert {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--accent-red);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            display: none;
+        }
+
+        .error-alert.visible {
+            display: block;
+        }
+
+        .error-title {
+            font-weight: 600;
+            color: var(--accent-red);
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>
+                <span>&#128202;</span>
+                Crypto Trading Bot
+            </h1>
+            <div class="status-badge" id="statusBadge">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Error Alert -->
+        <div class="error-alert" id="errorAlert">
+            <div class="error-title">Error</div>
+            <div id="errorMessage"></div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Balance</span>
+                    <span class="card-icon">&#128176;</span>
+                </div>
+                <div class="card-value" id="balance">$0.00</div>
+                <div class="card-subtitle">
+                    Available: <span id="balanceAvailable">$0.00</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Price</span>
+                    <span class="card-icon">&#128200;</span>
+                </div>
+                <div class="card-value" id="currentPrice">$0.00</div>
+                <div class="card-subtitle" id="tradingPair">BTCUSDT</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Daily P/L</span>
+                    <span class="card-icon">&#128184;</span>
+                </div>
+                <div class="card-value" id="dailyPnl">$0.00</div>
+                <div class="card-subtitle" id="dailyPnlPct">0.00%</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Win Rate</span>
+                    <span class="card-icon">&#127942;</span>
+                </div>
+                <div class="card-value" id="winRate">0%</div>
+                <div class="card-subtitle" id="tradeCount">0 trades today</div>
+            </div>
+        </div>
+
+        <!-- Position Card -->
+        <div class="card position-card" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <span class="card-title">Current Position</span>
+                <span class="card-icon">&#128178;</span>
+            </div>
+            <div id="positionContent">
+                <div class="no-position">No open position</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content-grid">
+            <!-- Left Column -->
+            <div>
+                <!-- Indicators -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <span class="card-title">Technical Indicators</span>
+                        <span class="card-icon">&#128202;</span>
+                    </div>
+                    <div class="indicators-grid">
+                        <div class="indicator-item">
+                            <div class="indicator-label">EMA Fast (9)</div>
+                            <div class="indicator-value" id="emaFast">-</div>
+                        </div>
+                        <div class="indicator-item">
+                            <div class="indicator-label">EMA Slow (21)</div>
+                            <div class="indicator-value" id="emaSlow">-</div>
+                        </div>
+                        <div class="indicator-item">
+                            <div class="indicator-label">RSI</div>
+                            <div class="indicator-value" id="rsi">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trade History -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Trade History</span>
+                        <span class="card-icon">&#128203;</span>
+                    </div>
+                    <div class="trade-list" id="tradeList">
+                        <div class="no-position">No trades yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div>
+                <!-- Configuration -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <span class="card-title">Configuration</span>
+                        <span class="card-icon">&#9881;</span>
+                    </div>
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <span class="config-label">Mode</span>
+                            <span class="config-value" id="configMode">TESTNET</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-label">Pair</span>
+                            <span class="config-value" id="configPair">BTCUSDT</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-label">Timeframe</span>
+                            <span class="config-value" id="configTimeframe">4h</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-label">Leverage</span>
+                            <span class="config-value" id="configLeverage">2x</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-label">Uptime</span>
+                            <span class="config-value" id="configUptime">-</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-label">Iteration</span>
+                            <span class="config-value" id="configIteration">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Logs -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Recent Logs</span>
+                        <span class="card-icon">&#128196;</span>
+                    </div>
+                    <div class="logs-container" id="logsContainer">
+                        <div class="log-entry">Waiting for logs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="last-update">
+                Last update: <span id="lastUpdate">Never</span>
+            </div>
+            <div style="margin-top: 8px;">
+                Crypto Trading Bot &copy; 2024 | Binance Futures
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Update interval in milliseconds
+        const UPDATE_INTERVAL = 5000;
+
+        // Format currency
+        function formatCurrency(value) {
+            return '$' + parseFloat(value).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Format percentage
+        function formatPercent(value) {
+            const sign = value >= 0 ? '+' : '';
+            return sign + parseFloat(value).toFixed(2) + '%';
+        }
+
+        // Format time
+        function formatTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleTimeString();
+        }
+
+        // Format uptime
+        function formatUptime(seconds) {
+            if (!seconds || seconds <= 0) return '-';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m ${secs}s`;
+        }
+
+        // Update status badge
+        function updateStatus(isRunning) {
+            const badge = document.getElementById('statusBadge');
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (isRunning) {
+                badge.className = 'status-badge running';
+                dot.className = 'status-dot running';
+                text.textContent = 'Running';
+            } else {
+                badge.className = 'status-badge stopped';
+                dot.className = 'status-dot stopped';
+                text.textContent = 'Stopped';
+            }
+        }
+
+        // Update position display
+        function updatePosition(data) {
+            const container = document.getElementById('positionContent');
+
+            if (!data.has_position) {
+                container.innerHTML = '<div class="no-position">No open position</div>';
+                return;
+            }
+
+            const pnlClass = data.position_unrealized_pnl >= 0 ? 'positive' : 'negative';
+            const sideClass = data.position_side === 'LONG' ? 'positive' : 'negative';
+
+            container.innerHTML = `
+                <div class="position-info">
+                    <div class="position-item">
+                        <div class="position-label">Side</div>
+                        <div class="position-value ${sideClass}">${data.position_side}</div>
+                    </div>
+                    <div class="position-item">
+                        <div class="position-label">Entry Price</div>
+                        <div class="position-value">${formatCurrency(data.position_entry_price)}</div>
+                    </div>
+                    <div class="position-item">
+                        <div class="position-label">Quantity</div>
+                        <div class="position-value">${parseFloat(data.position_quantity).toFixed(4)}</div>
+                    </div>
+                    <div class="position-item">
+                        <div class="position-label">Unrealized P/L</div>
+                        <div class="position-value ${pnlClass}">${formatCurrency(data.position_unrealized_pnl)}</div>
+                    </div>
+                    <div class="position-item">
+                        <div class="position-label">Stop Loss</div>
+                        <div class="position-value negative">${formatCurrency(data.position_stop_loss)}</div>
+                    </div>
+                    <div class="position-item">
+                        <div class="position-label">Take Profit</div>
+                        <div class="position-value positive">${formatCurrency(data.position_take_profit)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Update trade history
+        function updateTradeHistory(trades) {
+            const container = document.getElementById('tradeList');
+
+            if (!trades || trades.length === 0) {
+                container.innerHTML = '<div class="no-position">No trades yet</div>';
+                return;
+            }
+
+            const html = trades.slice().reverse().map(trade => {
+                const pnlClass = trade.pnl >= 0 ? 'positive' : 'negative';
+                const sideClass = trade.side === 'LONG' ? 'long' : 'short';
+                return `
+                    <div class="trade-item">
+                        <div>
+                            <span class="trade-side ${sideClass}">${trade.side}</span>
+                            <span style="margin-left: 8px; color: var(--text-secondary);">
+                                ${formatCurrency(trade.entry_price)} &#8594; ${formatCurrency(trade.exit_price)}
+                            </span>
+                        </div>
+                        <div class="trade-details">
+                            <div class="trade-pnl ${pnlClass}">${formatCurrency(trade.pnl)}</div>
+                            <div class="trade-time">${formatTime(trade.timestamp)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
+        }
+
+        // Update logs
+        function updateLogs(logs) {
+            const container = document.getElementById('logsContainer');
+
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<div class="log-entry">Waiting for logs...</div>';
+                return;
+            }
+
+            const html = logs.slice().reverse().slice(0, 50).map(log => {
+                return `
+                    <div class="log-entry">
+                        <span class="log-time">${formatTime(log.timestamp)}</span>
+                        <span class="log-level ${log.level}">${log.level}</span>
+                        <span>${log.message}</span>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
+        }
+
+        // Main update function
+        async function updateDashboard() {
+            try {
+                const response = await fetch('/api/status');
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error('Failed to fetch status');
+                }
+
+                const data = result.data;
+
+                // Update status
+                updateStatus(data.is_running);
+
+                // Update stats cards
+                document.getElementById('balance').textContent = formatCurrency(data.balance_total);
+                document.getElementById('balanceAvailable').textContent = formatCurrency(data.balance_available);
+                document.getElementById('currentPrice').textContent = formatCurrency(data.current_price);
+                document.getElementById('tradingPair').textContent = data.trading_pair;
+
+                // Daily P/L
+                const dailyPnl = document.getElementById('dailyPnl');
+                const dailyPnlPct = document.getElementById('dailyPnlPct');
+                dailyPnl.textContent = formatCurrency(data.daily_pnl);
+                dailyPnl.className = 'card-value ' + (data.daily_pnl >= 0 ? 'positive' : 'negative');
+
+                // Calculate percentage
+                if (data.initial_capital > 0) {
+                    const pct = (data.daily_pnl / data.initial_capital) * 100;
+                    dailyPnlPct.textContent = formatPercent(pct);
+                }
+
+                // Win rate
+                document.getElementById('winRate').textContent = data.daily_win_rate.toFixed(0) + '%';
+                document.getElementById('tradeCount').textContent = `${data.daily_trades} trades today`;
+
+                // Position
+                updatePosition(data);
+
+                // Indicators
+                document.getElementById('emaFast').textContent = data.ema_fast > 0 ? formatCurrency(data.ema_fast) : '-';
+                document.getElementById('emaSlow').textContent = data.ema_slow > 0 ? formatCurrency(data.ema_slow) : '-';
+                document.getElementById('rsi').textContent = data.rsi > 0 ? data.rsi.toFixed(2) : '-';
+
+                // Configuration
+                document.getElementById('configMode').textContent = data.trading_mode;
+                document.getElementById('configPair').textContent = data.trading_pair;
+                document.getElementById('configTimeframe').textContent = data.timeframe;
+                document.getElementById('configLeverage').textContent = data.leverage + 'x';
+                document.getElementById('configIteration').textContent = data.iteration;
+
+                // Uptime
+                if (data.started_at) {
+                    const started = new Date(data.started_at);
+                    const uptime = (Date.now() - started.getTime()) / 1000;
+                    document.getElementById('configUptime').textContent = formatUptime(uptime);
+                }
+
+                // Trades and logs
+                updateTradeHistory(data.trade_history);
+                updateLogs(data.recent_logs);
+
+                // Last update
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+                // Clear error
+                document.getElementById('errorAlert').classList.remove('visible');
+
+            } catch (error) {
+                console.error('Error updating dashboard:', error);
+                document.getElementById('errorAlert').classList.add('visible');
+                document.getElementById('errorMessage').textContent = error.message;
+            }
+        }
+
+        // Initial update
+        updateDashboard();
+
+        // Periodic updates
+        setInterval(updateDashboard, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>

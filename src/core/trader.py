@@ -14,6 +14,14 @@ from src.risk.position_manager import PositionManager
 from src.utils.logger import get_logger
 from src.utils.telegram_notifier import notifier
 
+# Import bot state for dashboard integration
+try:
+    from src.web.bot_state import bot_state
+    DASHBOARD_ENABLED = True
+except ImportError:
+    DASHBOARD_ENABLED = False
+    bot_state = None
+
 
 class Trader:
     """
@@ -64,6 +72,16 @@ class Trader:
             self.logger.error(f"Failed to setup exchange: {e}", exc_info=True)
             raise
 
+    def _update_dashboard_state(self, **kwargs):
+        """Update dashboard state if enabled."""
+        if DASHBOARD_ENABLED and bot_state:
+            bot_state.update(**kwargs)
+
+    def _add_dashboard_log(self, level: str, message: str):
+        """Add log to dashboard if enabled."""
+        if DASHBOARD_ENABLED and bot_state:
+            bot_state.add_log(level, message)
+
     def run_trading_loop(self):
         """
         Main trading loop.
@@ -82,6 +100,10 @@ class Trader:
             while True:
                 iteration += 1
                 self.logger.info(f"\n--- Iteration {iteration} ---")
+                self._add_dashboard_log("INFO", f"Starting iteration {iteration}")
+
+                # Update iteration in dashboard
+                self._update_dashboard_state(iteration=iteration)
 
                 # Execute one trading cycle
                 self._execute_trading_cycle()
@@ -109,6 +131,12 @@ class Trader:
             current_balance = balance_info['available']
 
             self.logger.log_balance(balance_info['total'], balance_info['available'])
+
+            # Update dashboard with balance
+            self._update_dashboard_state(
+                balance_total=balance_info['total'],
+                balance_available=balance_info['available']
+            )
 
             # 2. Check if we can trade today (daily loss limit)
             if not self.position_manager.check_daily_loss_limit():
@@ -139,6 +167,14 @@ class Trader:
             current_price = self.exchange.get_ticker_price(self.symbol)
             self.logger.info(f"Current {self.symbol} price: ${current_price:.2f}")
 
+            # Update dashboard with price and indicators
+            self._update_dashboard_state(
+                current_price=current_price,
+                ema_fast=float(df['ema_fast'].iloc[-1]) if 'ema_fast' in df.columns else 0,
+                ema_slow=float(df['ema_slow'].iloc[-1]) if 'ema_slow' in df.columns else 0,
+                rsi=float(df['rsi'].iloc[-1]) if 'rsi' in df.columns else 0
+            )
+
             # 6. Check for open positions
             open_positions = self.exchange.get_open_positions()
             has_open_position = any(
@@ -153,6 +189,29 @@ class Trader:
             if not has_open_position and self.current_position:
                 self.current_position = None
                 self.strategy.set_position(None)
+
+            # Update dashboard with position info
+            if self.current_position:
+                unrealized_pnl = self._calculate_unrealized_pnl(current_price)
+                self._update_dashboard_state(
+                    has_position=True,
+                    position_side=self.current_position['side'],
+                    position_entry_price=self.current_position['entry_price'],
+                    position_quantity=self.current_position['quantity'],
+                    position_unrealized_pnl=unrealized_pnl,
+                    position_stop_loss=self.current_position.get('stop_loss', 0),
+                    position_take_profit=self.current_position.get('take_profit', 0)
+                )
+            else:
+                self._update_dashboard_state(
+                    has_position=False,
+                    position_side=None,
+                    position_entry_price=0,
+                    position_quantity=0,
+                    position_unrealized_pnl=0,
+                    position_stop_loss=0,
+                    position_take_profit=0
+                )
 
             # 7. Evaluate strategy
             if self.current_position:
@@ -171,8 +230,18 @@ class Trader:
                     f"P/L: ${stats['daily_pnl']:.2f}"
                 )
 
+            # Update dashboard with daily stats
+            self._update_dashboard_state(
+                daily_trades=stats['total_trades'],
+                daily_wins=stats['winning_trades'],
+                daily_losses=stats['losing_trades'],
+                daily_pnl=stats['daily_pnl'],
+                daily_win_rate=stats['win_rate']
+            )
+
         except Exception as e:
             self.logger.error(f"Error in trading cycle: {e}", exc_info=True)
+            self._add_dashboard_log("ERROR", f"Trading cycle error: {e}")
 
     def _check_entry_conditions(
         self,
@@ -295,8 +364,12 @@ class Trader:
                 take_profit=take_profit
             )
 
+            # Update dashboard
+            self._add_dashboard_log("INFO", f"Opened {side} position: {quantity} @ ${entry_price:.2f}")
+
         except Exception as e:
             self.logger.error(f"Failed to execute entry: {e}", exc_info=True)
+            self._add_dashboard_log("ERROR", f"Failed to execute entry: {e}")
 
     def _check_exit_conditions(self, df, current_price: float):
         """
@@ -381,12 +454,30 @@ class Trader:
                 reason="Strategy Signal"
             )
 
+            # Update dashboard with trade
+            self._add_dashboard_log(
+                "INFO",
+                f"Closed {self.current_position['side']} position @ ${exit_price:.2f} | P/L: ${pnl:.2f}"
+            )
+
+            # Add trade to history
+            if DASHBOARD_ENABLED and bot_state:
+                bot_state.add_trade({
+                    "side": self.current_position['side'],
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "quantity": self.current_position['quantity'],
+                    "pnl": pnl,
+                    "pnl_percent": pnl_percent
+                })
+
             # Clear position
             self.current_position = None
             self.strategy.set_position(None)
 
         except Exception as e:
             self.logger.error(f"Failed to execute exit: {e}", exc_info=True)
+            self._add_dashboard_log("ERROR", f"Failed to execute exit: {e}")
 
     def _calculate_unrealized_pnl(self, current_price: float) -> float:
         """
