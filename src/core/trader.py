@@ -50,8 +50,9 @@ class Trader:
         # Set initial configuration
         self._setup_exchange()
 
-        # Track current position
-        self.current_position: Optional[Dict[str, Any]] = None
+        # Track positions (support multiple)
+        self.positions: list[Dict[str, Any]] = []
+        self.current_position: Optional[Dict[str, Any]] = None  # Primary position for compatibility
 
         # Trading state
         self.trading_paused = False
@@ -271,13 +272,17 @@ class Trader:
                 for pos in open_positions
             )
 
-            # Update current position tracking
-            if has_open_position and not self.current_position:
-                self._sync_position_from_exchange(open_positions)
-
-            if not has_open_position and self.current_position:
-                self.current_position = None
-                self.strategy.set_position(None)
+            # Update position tracking
+            if has_open_position:
+                # Sync any new positions from exchange
+                if not self.positions:
+                    self._sync_position_from_exchange(open_positions)
+            else:
+                # No positions on exchange, clear our tracking
+                if self.positions or self.current_position:
+                    self.positions = []
+                    self.current_position = None
+                    self.strategy.set_position(None)
 
             # Update dashboard with position info
             if self.current_position:
@@ -302,13 +307,19 @@ class Trader:
                     position_take_profit=0
                 )
 
-            # 7. Evaluate strategy
-            if self.current_position:
-                # Check if we should exit
-                self._check_exit_conditions(df, current_price)
-            else:
-                # Check if we should enter
+            # 7. Evaluate strategy - Check exits for all positions AND look for new entries
+            # Always check exit conditions for open positions
+            if self.positions:
+                self._check_all_exit_conditions(df, current_price)
+
+            # Always check for new entry opportunities if we have room for more positions
+            num_positions = len(self.positions)
+            max_positions = getattr(Settings, 'MAX_OPEN_POSITIONS', 1)
+            if num_positions < max_positions:
+                self.logger.info(f"[POSITIONS] {num_positions}/{max_positions} - Looking for entry signals...")
                 self._check_entry_conditions(df, current_price, current_balance)
+            else:
+                self.logger.debug(f"Max positions ({max_positions}) reached, not looking for new entries")
 
             # 8. Log daily stats
             stats = self.position_manager.get_daily_stats()
@@ -347,10 +358,11 @@ class Trader:
             available_balance: Available balance for trading
         """
         # Count current open positions
-        current_positions = 1 if self.current_position else 0
+        current_positions = len(self.positions)
 
         # Check if we can open a new position
         if not self.position_manager.can_open_position(current_positions):
+            self.logger.debug(f"Cannot open new position (current: {current_positions})")
             return
 
         # Get entry signal from strategy
@@ -433,7 +445,7 @@ class Trader:
             )
 
             # Store position information
-            self.current_position = {
+            new_position = {
                 'side': side,
                 'entry_price': entry_price,
                 'quantity': quantity,
@@ -442,8 +454,15 @@ class Trader:
                 'order_id': order['orderId']
             }
 
+            # Add to positions list
+            self.positions.append(new_position)
+
+            # Update current_position for compatibility (primary position)
+            if not self.current_position:
+                self.current_position = new_position
+
             # Update strategy
-            self.strategy.set_position(self.current_position)
+            self.strategy.set_position(new_position)
 
             self.logger.info(f"Position opened successfully: {side} {quantity} {self.symbol}")
 
@@ -463,9 +482,42 @@ class Trader:
             self.logger.error(f"Failed to execute entry: {e}", exc_info=True)
             self._add_dashboard_log("ERROR", f"Failed to execute entry: {e}")
 
+    def _check_all_exit_conditions(self, df, current_price: float):
+        """
+        Check exit conditions for ALL open positions.
+
+        Args:
+            df: Market data DataFrame
+            current_price: Current market price
+        """
+        # Make a copy to avoid modifying list while iterating
+        positions_to_check = self.positions.copy()
+
+        for i, position in enumerate(positions_to_check):
+            # Calculate P/L for this position
+            pnl = self._calculate_position_pnl(position, current_price)
+            pnl_percent = (pnl / (position['entry_price'] * position['quantity'])) * 100
+
+            # Log position status
+            self.logger.log_position(
+                symbol=self.symbol,
+                side=position['side'],
+                quantity=position['quantity'],
+                entry_price=position['entry_price'],
+                current_price=current_price,
+                unrealized_pnl=pnl
+            )
+
+            # Check if strategy signals exit for this position
+            should_exit = self.strategy.should_exit(df, current_price, position)
+
+            if should_exit:
+                self.logger.info(f"Exit signal detected for position #{i+1}")
+                self._execute_exit_for_position(position, current_price)
+
     def _check_exit_conditions(self, df, current_price: float):
         """
-        Check if exit conditions are met and execute exit.
+        Check if exit conditions are met and execute exit (legacy single position).
 
         Args:
             df: Market data DataFrame
@@ -573,20 +625,43 @@ class Trader:
 
     def _calculate_unrealized_pnl(self, current_price: float) -> float:
         """
-        Calculate unrealized profit/loss for current position.
+        Calculate total unrealized profit/loss for all positions.
 
         Args:
             current_price: Current market price
 
         Returns:
-            Unrealized P/L
+            Total Unrealized P/L
         """
-        if not self.current_position:
+        total_pnl = 0.0
+
+        # Calculate for all positions
+        for position in self.positions:
+            total_pnl += self._calculate_position_pnl(position, current_price)
+
+        # Also include current_position for compatibility
+        if self.current_position and self.current_position not in self.positions:
+            total_pnl += self._calculate_position_pnl(self.current_position, current_price)
+
+        return total_pnl
+
+    def _calculate_position_pnl(self, position: Dict[str, Any], current_price: float) -> float:
+        """
+        Calculate unrealized profit/loss for a specific position.
+
+        Args:
+            position: Position dictionary
+            current_price: Current market price
+
+        Returns:
+            Unrealized P/L for this position
+        """
+        if not position:
             return 0.0
 
-        entry_price = self.current_position['entry_price']
-        quantity = self.current_position['quantity']
-        side = self.current_position['side']
+        entry_price = position['entry_price']
+        quantity = position['quantity']
+        side = position['side']
 
         if side == 'LONG':
             pnl = (current_price - entry_price) * quantity
@@ -594,6 +669,91 @@ class Trader:
             pnl = (entry_price - current_price) * quantity
 
         return pnl
+
+    def _execute_exit_for_position(self, position: Dict[str, Any], exit_price: float):
+        """
+        Execute exit order for a specific position.
+
+        Args:
+            position: Position to close
+            exit_price: Exit price
+        """
+        try:
+            # Determine order side (opposite of position)
+            order_side = 'SELL' if position['side'] == 'LONG' else 'BUY'
+
+            # Place market order to close position
+            order = self.exchange.place_market_order(
+                symbol=self.symbol,
+                side=order_side,
+                quantity=position['quantity']
+            )
+
+            # Calculate profit/loss
+            pnl = self._calculate_position_pnl(position, exit_price)
+            entry_price = position['entry_price']
+            pnl_percent = (pnl / (entry_price * position['quantity'])) * 100
+
+            # Log trade
+            self.logger.log_trade(
+                side=order_side,
+                symbol=self.symbol,
+                price=exit_price,
+                quantity=position['quantity'],
+                profit=pnl,
+                trade_type='CLOSE'
+            )
+
+            # Record trade in position manager
+            self.position_manager.record_trade(pnl)
+
+            self.logger.info(
+                f"Position closed successfully. P/L: "
+                f"{'+ $' if pnl > 0 else '- $'}{abs(pnl):.2f}"
+            )
+
+            # Send Telegram notification
+            notifier.notify_trade_exit(
+                side=position['side'],
+                entry_price=entry_price,
+                exit_price=exit_price,
+                quantity=position['quantity'],
+                pnl=pnl,
+                pnl_percent=pnl_percent,
+                reason="Strategy Signal"
+            )
+
+            # Update dashboard with trade
+            self._add_dashboard_log(
+                "INFO",
+                f"Closed {position['side']} position @ ${exit_price:.2f} | P/L: ${pnl:.2f}"
+            )
+
+            # Add trade to history
+            if DASHBOARD_ENABLED and bot_state:
+                bot_state.add_trade({
+                    "side": position['side'],
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "quantity": position['quantity'],
+                    "pnl": pnl,
+                    "pnl_percent": pnl_percent
+                })
+
+            # Remove position from list
+            if position in self.positions:
+                self.positions.remove(position)
+
+            # Update current_position for compatibility
+            if position == self.current_position:
+                self.current_position = self.positions[0] if self.positions else None
+
+            # Update strategy
+            self.strategy.set_position(self.current_position)
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute exit: {e}", exc_info=True)
+            self._add_dashboard_log("ERROR", f"Failed to execute exit: {e}")
 
     def _sync_position_from_exchange(self, positions):
         """
@@ -609,23 +769,37 @@ class Trader:
                     side = 'LONG' if amount > 0 else 'SHORT'
                     entry_price = float(pos['entryPrice'])
 
-                    # Calculate SL/TP using strategy (critical for exit logic)
-                    stop_loss = self.strategy.get_stop_loss(entry_price, side)
-                    take_profit = self.strategy.get_take_profit(entry_price, side)
-
-                    self.current_position = {
-                        'side': side,
-                        'entry_price': entry_price,
-                        'quantity': abs(amount),
-                        'stop_loss': stop_loss,
-                        'take_profit': take_profit
-                    }
-                    self.strategy.set_position(self.current_position)
-                    self.logger.info(
-                        f"Synced existing position from exchange: {side} @ {entry_price:.2f}, "
-                        f"SL: {stop_loss:.2f}, TP: {take_profit:.2f}"
+                    # Check if position already tracked
+                    already_tracked = any(
+                        p['entry_price'] == entry_price and p['side'] == side
+                        for p in self.positions
                     )
-                    break
+
+                    if not already_tracked:
+                        # Calculate SL/TP using strategy (critical for exit logic)
+                        stop_loss = self.strategy.get_stop_loss(entry_price, side)
+                        take_profit = self.strategy.get_take_profit(entry_price, side)
+
+                        synced_position = {
+                            'side': side,
+                            'entry_price': entry_price,
+                            'quantity': abs(amount),
+                            'stop_loss': stop_loss,
+                            'take_profit': take_profit
+                        }
+
+                        # Add to positions list
+                        self.positions.append(synced_position)
+
+                        # Set as current_position if first one
+                        if not self.current_position:
+                            self.current_position = synced_position
+
+                        self.strategy.set_position(synced_position)
+                        self.logger.info(
+                            f"Synced existing position from exchange: {side} @ {entry_price:.2f}, "
+                            f"SL: {stop_loss:.2f}, TP: {take_profit:.2f}"
+                        )
 
     def _shutdown(self, reason: str = "Unknown"):
         """
