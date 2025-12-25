@@ -12,20 +12,22 @@ from src.strategies.base_strategy import BaseStrategy
 
 class EMACrossoverStrategy(BaseStrategy):
     """
-    EMA Crossover Strategy with volume confirmation.
+    AGGRESSIVE EMA Scalping Strategy.
 
     Entry Rules:
-    - LONG: EMA(9) crosses above EMA(21) + volume > average volume
-    - SHORT: EMA(9) crosses below EMA(21) + volume > average volume
+    - LONG: EMA(5) crosses above EMA(13) OR strong bullish momentum
+    - SHORT: EMA(5) crosses below EMA(13) OR strong bearish momentum
+    - Reduced volume confirmation (80% of average)
+    - Momentum entries when EMAs show clear direction
 
     Exit Rules:
-    - Stop Loss: 2% from entry
-    - Take Profit: 6% from entry (1:3 risk-reward ratio)
+    - Stop Loss: 0.5% from entry (tight micro stops)
+    - Take Profit: 1.5% from entry (1:3 risk-reward ratio)
 
     Additional Rules:
-    - Only one position at a time
-    - Uses 4-hour timeframe for reduced noise
-    - Conservative position sizing with max 2x leverage
+    - Multiple positions allowed (up to 3)
+    - Uses 5-minute timeframe for frequent entries
+    - Aggressive position sizing with 5x leverage
     """
 
     def __init__(self):
@@ -44,7 +46,7 @@ class EMACrossoverStrategy(BaseStrategy):
 
     def should_enter(self, df: pd.DataFrame, current_price: float) -> Optional[str]:
         """
-        Determine if strategy should enter a position.
+        Determine if strategy should enter a position (AGGRESSIVE MODE).
 
         Args:
             df: DataFrame with market data and indicators
@@ -57,17 +59,14 @@ class EMACrossoverStrategy(BaseStrategy):
         if not self.validate_signal(df):
             return None
 
-        # Already in a position
-        if self.has_position():
-            return None
-
-        # Need at least 2 candles to detect crossover
-        if len(df) < 2:
+        # Need at least 3 candles to detect momentum
+        if len(df) < 3:
             return None
 
         # Get current and previous candles
         current = df.iloc[-1]
         previous = df.iloc[-2]
+        prev_prev = df.iloc[-3]
 
         # Check for required indicators
         required_cols = ['ema_fast', 'ema_slow', 'volume', 'volume_avg']
@@ -80,12 +79,11 @@ class EMACrossoverStrategy(BaseStrategy):
                    current['volume'], current['volume_avg']]).any():
             return None
 
-        # Volume confirmation: current volume > average volume
-        volume_confirmed = current['volume'] > current['volume_avg']
+        # AGGRESSIVE: Reduced volume confirmation (80% of average is enough)
+        volume_confirmed = current['volume'] > (current['volume_avg'] * 0.8)
 
-        if not volume_confirmed:
-            self.logger.debug("Volume confirmation failed")
-            return None
+        # Calculate EMA spread percentage
+        ema_spread = abs(current['ema_fast'] - current['ema_slow']) / current['ema_slow'] * 100
 
         # Bullish crossover: EMA fast crosses above EMA slow
         bullish_cross = (
@@ -93,13 +91,13 @@ class EMACrossoverStrategy(BaseStrategy):
             current['ema_fast'] > current['ema_slow']
         )
 
-        if bullish_cross:
-            self.log_signal(
-                "LONG SIGNAL",
-                f"EMA({self.ema_fast_period}) crossed above EMA({self.ema_slow_period}) "
-                f"with volume confirmation"
-            )
-            return 'LONG'
+        # AGGRESSIVE: Bullish momentum - EMA fast consistently above slow and rising
+        bullish_momentum = (
+            current['ema_fast'] > current['ema_slow'] and
+            previous['ema_fast'] > previous['ema_slow'] and
+            current['ema_fast'] > previous['ema_fast'] and
+            ema_spread > 0.05  # At least 0.05% spread
+        )
 
         # Bearish crossover: EMA fast crosses below EMA slow
         bearish_cross = (
@@ -107,11 +105,41 @@ class EMACrossoverStrategy(BaseStrategy):
             current['ema_fast'] < current['ema_slow']
         )
 
-        if bearish_cross:
+        # AGGRESSIVE: Bearish momentum - EMA fast consistently below slow and falling
+        bearish_momentum = (
+            current['ema_fast'] < current['ema_slow'] and
+            previous['ema_fast'] < previous['ema_slow'] and
+            current['ema_fast'] < previous['ema_fast'] and
+            ema_spread > 0.05  # At least 0.05% spread
+        )
+
+        # Check for LONG signals
+        if bullish_cross and volume_confirmed:
             self.log_signal(
-                "SHORT SIGNAL",
-                f"EMA({self.ema_fast_period}) crossed below EMA({self.ema_slow_period}) "
-                f"with volume confirmation"
+                "LONG SIGNAL (CROSSOVER)",
+                f"EMA({self.ema_fast_period}) crossed above EMA({self.ema_slow_period})"
+            )
+            return 'LONG'
+
+        if bullish_momentum and volume_confirmed:
+            self.log_signal(
+                "LONG SIGNAL (MOMENTUM)",
+                f"Strong bullish momentum, spread: {ema_spread:.3f}%"
+            )
+            return 'LONG'
+
+        # Check for SHORT signals
+        if bearish_cross and volume_confirmed:
+            self.log_signal(
+                "SHORT SIGNAL (CROSSOVER)",
+                f"EMA({self.ema_fast_period}) crossed below EMA({self.ema_slow_period})"
+            )
+            return 'SHORT'
+
+        if bearish_momentum and volume_confirmed:
+            self.log_signal(
+                "SHORT SIGNAL (MOMENTUM)",
+                f"Strong bearish momentum, spread: {ema_spread:.3f}%"
             )
             return 'SHORT'
 

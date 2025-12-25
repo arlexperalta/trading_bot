@@ -35,24 +35,25 @@ class Settings:
 
     # Trading parameters
     INITIAL_CAPITAL: float = float(os.getenv('INITIAL_CAPITAL', 100))
-    MAX_LEVERAGE: int = int(os.getenv('MAX_LEVERAGE', 2))
-    RISK_PER_TRADE: float = float(os.getenv('RISK_PER_TRADE', 0.01))
+    MAX_LEVERAGE: int = int(os.getenv('MAX_LEVERAGE', 5))  # Increased to 5x
+    RISK_PER_TRADE: float = float(os.getenv('RISK_PER_TRADE', 0.02))  # 2% risk per trade
     TRADING_PAIR: str = os.getenv('TRADING_PAIR', 'BTCUSDT')
 
-    # Risk management
-    MAX_DAILY_LOSS_PERCENT: float = 0.05  # 5% maximum daily loss
-    STOP_LOSS_PERCENT: float = 0.02  # 2% stop loss
-    TAKE_PROFIT_PERCENT: float = 0.06  # 6% take profit
+    # Risk management - AGGRESSIVE MODE
+    MAX_DAILY_LOSS_PERCENT: float = 0.08  # 8% maximum daily loss
+    STOP_LOSS_PERCENT: float = 0.005  # 0.5% stop loss (micro trades)
+    TAKE_PROFIT_PERCENT: float = 0.015  # 1.5% take profit (1:3 ratio)
 
-    # Strategy parameters
-    EMA_FAST_PERIOD: int = 9
-    EMA_SLOW_PERIOD: int = 21
-    TIMEFRAME: str = '4h'  # 4-hour candles
-    VOLUME_PERIOD: int = 20  # Volume average period
+    # Strategy parameters - AGGRESSIVE SCALPING
+    EMA_FAST_PERIOD: int = 5
+    EMA_SLOW_PERIOD: int = 13
+    TIMEFRAME: str = '5m'  # 5-minute candles for frequent entries
+    VOLUME_PERIOD: int = 10  # Shorter volume average period
 
-    # Bot behavior
-    UPDATE_INTERVAL: int = 300  # 5 minutes in seconds
-    MAX_OPEN_POSITIONS: int = 1  # Only one position at a time
+    # Bot behavior - AGGRESSIVE MODE
+    UPDATE_INTERVAL: int = 30  # 30 seconds for faster reaction
+    MAX_OPEN_POSITIONS: int = 3  # Allow 3 simultaneous positions
+    MAX_POSITION_PERCENT: float = 0.05  # 5% of capital per position
 
     # API rate limiting
     MAX_REQUESTS_PER_MINUTE: int = 1200

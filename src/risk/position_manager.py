@@ -54,6 +54,7 @@ class PositionManager:
 
         Formula:
             Position Size = (Capital * Risk%) / (Entry Price - Stop Loss Price)
+            Limited by: Max Notional Value = Capital * Leverage
         """
         self._reset_daily_counters()
 
@@ -80,18 +81,29 @@ class PositionManager:
             self.logger.error("Stop loss price must be different from entry price")
             return 0.0
 
-        # Calculate base position size
-        position_size = risk_amount / price_diff
+        # Calculate base position size based on risk
+        position_size_by_risk = risk_amount / price_diff
 
-        # Apply leverage
-        position_size_with_leverage = position_size * leverage
+        # Calculate maximum position size based on position limit (5% of capital)
+        # This ensures we don't use too much capital per position
+        max_position_percent = getattr(Settings, 'MAX_POSITION_PERCENT', 0.05)
+        max_notional = capital * max_position_percent * leverage
+        max_position_size = max_notional / entry_price
 
-        # Truncate to reasonable precision
-        position_size_final = truncate_float(position_size_with_leverage, 6)
+        # Use the smaller of risk-based or position-limit-based size
+        position_size = min(position_size_by_risk, max_position_size)
+
+        # Truncate to reasonable precision (3 decimals for BTC)
+        position_size_final = truncate_float(position_size, 3)
+
+        # Ensure minimum position size
+        if position_size_final < 0.001:
+            self.logger.warning(f"Position size too small: {position_size_final}, using minimum 0.001")
+            position_size_final = 0.001
 
         self.logger.info(
             f"Position size calculated: {position_size_final} "
-            f"(Capital: ${capital:.2f}, Risk: ${risk_amount:.2f}, "
+            f"(Capital: ${capital:.2f}, Max {max_position_percent*100:.0f}% = ${max_notional:.2f}, "
             f"Leverage: {leverage}x)"
         )
 

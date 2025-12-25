@@ -26,6 +26,9 @@ class BinanceConnector:
         # Get API credentials
         api_key, api_secret = Settings.get_api_credentials()
 
+        # Symbol precision cache
+        self.symbol_info_cache = {}
+
         # Initialize Binance client
         try:
             # Configure testnet mode
@@ -39,9 +42,86 @@ class BinanceConnector:
             # Test connection
             self._test_connection()
 
+            # Load symbol precision info
+            self._load_symbol_info()
+
         except Exception as e:
             self.logger.error(f"Failed to initialize Binance client: {e}", exc_info=True)
             raise
+
+    def _load_symbol_info(self):
+        """Load symbol precision information from exchange"""
+        try:
+            exchange_info = self.client.futures_exchange_info()
+            for symbol_data in exchange_info['symbols']:
+                symbol = symbol_data['symbol']
+                self.symbol_info_cache[symbol] = {
+                    'quantity_precision': symbol_data['quantityPrecision'],
+                    'price_precision': symbol_data['pricePrecision'],
+                    'min_qty': None,
+                    'step_size': None
+                }
+                # Get filters
+                for f in symbol_data['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        self.symbol_info_cache[symbol]['min_qty'] = float(f['minQty'])
+                        self.symbol_info_cache[symbol]['step_size'] = float(f['stepSize'])
+                    elif f['filterType'] == 'MIN_NOTIONAL':
+                        self.symbol_info_cache[symbol]['min_notional'] = float(f.get('notional', 5))
+
+            self.logger.info(f"Loaded precision info for {len(self.symbol_info_cache)} symbols")
+        except Exception as e:
+            self.logger.warning(f"Failed to load symbol info: {e}")
+            # Set defaults for BTCUSDT
+            self.symbol_info_cache['BTCUSDT'] = {
+                'quantity_precision': 3,
+                'price_precision': 2,
+                'min_qty': 0.001,
+                'step_size': 0.001
+            }
+
+    def format_quantity(self, symbol: str, quantity: float) -> float:
+        """
+        Format quantity according to symbol precision.
+
+        Args:
+            symbol: Trading pair symbol
+            quantity: Raw quantity
+
+        Returns:
+            Formatted quantity with correct precision
+        """
+        info = self.symbol_info_cache.get(symbol, {})
+        precision = info.get('quantity_precision', 3)
+        step_size = info.get('step_size', 0.001)
+
+        # Round to step size
+        if step_size:
+            quantity = round(quantity / step_size) * step_size
+
+        # Round to precision
+        formatted = round(quantity, precision)
+
+        self.logger.debug(f"Formatted quantity: {quantity} -> {formatted} (precision: {precision})")
+
+        return formatted
+
+    def format_price(self, symbol: str, price: float) -> float:
+        """
+        Format price according to symbol precision.
+
+        Args:
+            symbol: Trading pair symbol
+            price: Raw price
+
+        Returns:
+            Formatted price with correct precision
+        """
+        info = self.symbol_info_cache.get(symbol, {})
+        precision = info.get('price_precision', 2)
+
+        formatted = round(price, precision)
+        return formatted
 
     def _test_connection(self):
         """Test connection to Binance API"""
@@ -206,13 +286,16 @@ class BinanceConnector:
             BinanceAPIException: If order fails
         """
         try:
-            self.logger.info(f"Placing {side} market order: {quantity} {symbol}")
+            # Format quantity with correct precision
+            formatted_qty = self.format_quantity(symbol, quantity)
+
+            self.logger.info(f"Placing {side} market order: {formatted_qty} {symbol}")
 
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
                 type='MARKET',
-                quantity=quantity
+                quantity=formatted_qty
             )
 
             self.logger.info(f"Order placed successfully: {order['orderId']}")
@@ -255,8 +338,12 @@ class BinanceConnector:
             BinanceAPIException: If order fails
         """
         try:
+            # Format quantity and price with correct precision
+            formatted_qty = self.format_quantity(symbol, quantity)
+            formatted_price = self.format_price(symbol, price)
+
             self.logger.info(
-                f"Placing {side} limit order: {quantity} {symbol} @ {price}"
+                f"Placing {side} limit order: {formatted_qty} {symbol} @ {formatted_price}"
             )
 
             order = self.client.futures_create_order(
@@ -264,8 +351,8 @@ class BinanceConnector:
                 side=side,
                 type='LIMIT',
                 timeInForce='GTC',
-                quantity=quantity,
-                price=price
+                quantity=formatted_qty,
+                price=formatted_price
             )
 
             self.logger.info(f"Limit order placed successfully: {order['orderId']}")

@@ -13,6 +13,7 @@ from src.strategies.base_strategy import BaseStrategy
 from src.risk.position_manager import PositionManager
 from src.utils.logger import get_logger
 from src.utils.telegram_notifier import notifier
+from src.utils.telegram_commands import command_handler
 
 # Import bot state for dashboard integration
 try:
@@ -52,6 +53,15 @@ class Trader:
         # Track current position
         self.current_position: Optional[Dict[str, Any]] = None
 
+        # Trading state
+        self.trading_paused = False
+        self.iteration = 0
+        self.current_price = 0.0
+        self.balance_info = {"total": 0, "available": 0}
+
+        # Setup Telegram command handler
+        self._setup_telegram_commands()
+
         self.logger.info(f"Trader initialized with {strategy.name} strategy")
         self.logger.info(f"Trading pair: {self.symbol}")
         self.logger.info(f"Timeframe: {Settings.TIMEFRAME}")
@@ -71,6 +81,81 @@ class Trader:
         except Exception as e:
             self.logger.error(f"Failed to setup exchange: {e}", exc_info=True)
             raise
+
+    def _setup_telegram_commands(self):
+        """Setup Telegram command handler with callbacks"""
+        command_handler.set_callbacks(
+            status_cb=self._get_status_for_telegram,
+            balance_cb=self._get_balance_for_telegram,
+            daily_cb=self._get_daily_for_telegram,
+            position_cb=self._get_position_for_telegram,
+            stop_cb=self._pause_trading,
+            start_cb=self._resume_trading
+        )
+        command_handler.start_polling()
+        self.logger.info("Telegram command handler started")
+
+    def _get_status_for_telegram(self) -> Dict[str, Any]:
+        """Get status info for Telegram command"""
+        # Get strategy info if available
+        strategy_name = self.strategy.name if hasattr(self.strategy, 'name') else "Unknown"
+        market_regime = "N/A"
+        regime_confidence = 0
+
+        # Check if adaptive strategy with regime info
+        if hasattr(self.strategy, 'current_regime'):
+            market_regime = self.strategy.current_regime.value if hasattr(self.strategy.current_regime, 'value') else str(self.strategy.current_regime)
+        if hasattr(self.strategy, 'regime_confidence'):
+            regime_confidence = self.strategy.regime_confidence
+
+        return {
+            "running": not self.trading_paused,
+            "iteration": self.iteration,
+            "current_price": self.current_price,
+            "has_position": self.current_position is not None,
+            "position_side": self.current_position.get("side") if self.current_position else None,
+            "unrealized_pnl": self._calculate_unrealized_pnl(self.current_price) if self.current_position else 0,
+            "strategy_name": strategy_name,
+            "market_regime": market_regime,
+            "regime_confidence": regime_confidence
+        }
+
+    def _get_balance_for_telegram(self) -> Dict[str, Any]:
+        """Get balance info for Telegram command"""
+        unrealized = self._calculate_unrealized_pnl(self.current_price) if self.current_position else 0
+        return {
+            "total": self.balance_info.get("total", 0),
+            "available": self.balance_info.get("available", 0),
+            "unrealized_pnl": unrealized
+        }
+
+    def _get_daily_for_telegram(self) -> Dict[str, Any]:
+        """Get daily stats for Telegram command"""
+        return self.position_manager.get_daily_stats()
+
+    def _get_position_for_telegram(self) -> Dict[str, Any]:
+        """Get position info for Telegram command"""
+        if self.current_position:
+            return {
+                "has_position": True,
+                "side": self.current_position.get("side"),
+                "entry_price": self.current_position.get("entry_price", 0),
+                "quantity": self.current_position.get("quantity", 0),
+                "stop_loss": self.current_position.get("stop_loss", 0),
+                "take_profit": self.current_position.get("take_profit", 0),
+                "unrealized_pnl": self._calculate_unrealized_pnl(self.current_price)
+            }
+        return {"has_position": False}
+
+    def _pause_trading(self):
+        """Pause trading (called from Telegram)"""
+        self.trading_paused = True
+        self.logger.info("Trading paused via Telegram command")
+
+    def _resume_trading(self):
+        """Resume trading (called from Telegram)"""
+        self.trading_paused = False
+        self.logger.info("Trading resumed via Telegram command")
 
     def _update_dashboard_state(self, **kwargs):
         """Update dashboard state if enabled."""
@@ -94,19 +179,21 @@ class Trader:
         # Send Telegram notification
         notifier.notify_bot_start()
 
-        iteration = 0
-
         try:
             while True:
-                iteration += 1
-                self.logger.info(f"\n--- Iteration {iteration} ---")
-                self._add_dashboard_log("INFO", f"Starting iteration {iteration}")
+                self.iteration += 1
+                self.logger.info(f"\n--- Iteration {self.iteration} ---")
+                self._add_dashboard_log("INFO", f"Starting iteration {self.iteration}")
 
                 # Update iteration in dashboard
-                self._update_dashboard_state(iteration=iteration)
+                self._update_dashboard_state(iteration=self.iteration)
 
-                # Execute one trading cycle
-                self._execute_trading_cycle()
+                # Check if trading is paused
+                if self.trading_paused:
+                    self.logger.info("Trading paused. Waiting...")
+                else:
+                    # Execute one trading cycle
+                    self._execute_trading_cycle()
 
                 # Wait before next iteration
                 self.logger.info(
@@ -129,6 +216,7 @@ class Trader:
             # 1. Get current balance
             balance_info = self.exchange.get_balance()
             current_balance = balance_info['available']
+            self.balance_info = balance_info  # Store for Telegram commands
 
             self.logger.log_balance(balance_info['total'], balance_info['available'])
 
@@ -165,6 +253,7 @@ class Trader:
 
             # 5. Get current price
             current_price = self.exchange.get_ticker_price(self.symbol)
+            self.current_price = current_price  # Store for Telegram commands
             self.logger.info(f"Current {self.symbol} price: ${current_price:.2f}")
 
             # Update dashboard with price and indicators
@@ -257,8 +346,11 @@ class Trader:
             current_price: Current market price
             available_balance: Available balance for trading
         """
+        # Count current open positions
+        current_positions = 1 if self.current_position else 0
+
         # Check if we can open a new position
-        if not self.position_manager.can_open_position(0):
+        if not self.position_manager.can_open_position(current_positions):
             return
 
         # Get entry signal from strategy
@@ -514,15 +606,25 @@ class Trader:
             if pos['symbol'] == self.symbol:
                 amount = float(pos['positionAmt'])
                 if amount != 0:
+                    side = 'LONG' if amount > 0 else 'SHORT'
+                    entry_price = float(pos['entryPrice'])
+
+                    # Calculate SL/TP using strategy (critical for exit logic)
+                    stop_loss = self.strategy.get_stop_loss(entry_price, side)
+                    take_profit = self.strategy.get_take_profit(entry_price, side)
+
                     self.current_position = {
-                        'side': 'LONG' if amount > 0 else 'SHORT',
-                        'entry_price': float(pos['entryPrice']),
+                        'side': side,
+                        'entry_price': entry_price,
                         'quantity': abs(amount),
-                        'stop_loss': 0,  # Not tracked by exchange
-                        'take_profit': 0  # Not tracked by exchange
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit
                     }
                     self.strategy.set_position(self.current_position)
-                    self.logger.info("Synced existing position from exchange")
+                    self.logger.info(
+                        f"Synced existing position from exchange: {side} @ {entry_price:.2f}, "
+                        f"SL: {stop_loss:.2f}, TP: {take_profit:.2f}"
+                    )
                     break
 
     def _shutdown(self, reason: str = "Unknown"):
