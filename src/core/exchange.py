@@ -399,8 +399,12 @@ class BinanceConnector:
             return response
 
         except BinanceAPIException as e:
-            self.logger.error(f"Failed to set leverage: {e}", exc_info=True)
-            raise
+            # Can't change leverage with open position - not an error
+            if e.code == -4161:
+                self.logger.debug(f"Cannot change leverage with open position for {symbol}")
+            else:
+                self.logger.error(f"Failed to set leverage: {e}", exc_info=True)
+                raise
         except Exception as e:
             self.logger.error(f"Unexpected error setting leverage: {e}", exc_info=True)
             raise
